@@ -22,6 +22,7 @@ import (
 	"github.com/ncecere/bullnose/internal/metrics"
 	"github.com/ncecere/bullnose/internal/robots"
 	"github.com/ncecere/bullnose/internal/store"
+	"github.com/ncecere/bullnose/internal/types"
 	"github.com/ncecere/bullnose/internal/urlutil"
 )
 
@@ -286,6 +287,13 @@ func getInt(params map[string]any, key string) int {
 	return 0
 }
 
+func requestedFormats(params map[string]any) []string {
+	if raw, ok := params["output_format"]; ok {
+		return types.FormatsFromAny(raw, formatpkg.FormatMarkdown)
+	}
+	return []string{formatpkg.FormatMarkdown}
+}
+
 func fetchWithLimit(ctx context.Context, limiter *hostLimiter, fetcher *fetch.Fetcher, rawURL string, useJS bool) (*fetch.Result, error) {
 	if limiter != nil {
 		release, err := limiter.acquire(ctx, rawURL)
@@ -306,7 +314,7 @@ func ensureRobotsAllowed(cfg *config.Config, robotsClient *robots.Client, url, u
 
 func fetchExtractAndStore(ctx context.Context, st *store.Store, limiter *hostLimiter, fetcher *fetch.Fetcher, task *store.Task, params map[string]any, cfg *config.Config, jobType string) (*extract.Extracted, error) {
 	useJS := getBool(params, "use_js")
-	outFormat := getString(params, "output_format")
+	formats := requestedFormats(params)
 
 	fetchStart := time.Now()
 	res, err := fetchWithLimit(ctx, limiter, fetcher, task.RequestedURL, useJS)
@@ -336,36 +344,74 @@ func fetchExtractAndStore(ctx context.Context, st *store.Store, limiter *hostLim
 		}
 	}
 
-	content, err := formatpkg.FormatContent(ext, outFormat)
-	if err != nil {
-		return nil, err
+	outputs := make(map[string]string, len(formats))
+	var primaryContent string
+	for _, fmt := range formats {
+		if fmt == "" {
+			continue
+		}
+		if _, ok := outputs[fmt]; ok {
+			continue
+		}
+		content, err := formatpkg.FormatContent(ext, fmt)
+		if err != nil {
+			return nil, err
+		}
+		outputs[fmt] = content
+		if primaryContent == "" {
+			primaryContent = content
+		}
+	}
+	if len(outputs) == 0 {
+		content, err := formatpkg.FormatContent(ext, formatpkg.FormatMarkdown)
+		if err != nil {
+			return nil, err
+		}
+		outputs[formatpkg.FormatMarkdown] = content
+		primaryContent = content
 	}
 
-	if err := storeDocument(ctx, st, task, canonFinal, content, ext, params, cfg, jobType); err != nil {
+	if err := storeDocument(ctx, st, task, canonFinal, outputs, primaryContent, ext, params, cfg, jobType); err != nil {
 		return nil, err
 	}
 	return ext, nil
 }
 
-func storeDocument(ctx context.Context, st *store.Store, task *store.Task, finalURL, content string, ext *extract.Extracted, params map[string]any, cfg *config.Config, jobType string) error {
+func storeDocument(ctx context.Context, st *store.Store, task *store.Task, finalURL string, outputs map[string]string, primaryContent string, ext *extract.Extracted, params map[string]any, cfg *config.Config, jobType string) error {
+	if ext.Meta == nil {
+		ext.Meta = make(map[string]string)
+	}
 	delete(ext.Meta, "url")
+	metaMap := make(map[string]any, len(ext.Meta)+2)
+	for k, v := range ext.Meta {
+		metaMap[k] = v
+	}
 	if jobType == "crawl" {
 		if start := getString(params, "url"); start != "" {
-			ext.Meta["crawl_url"] = start
+			metaMap["crawl_url"] = start
 		}
 	}
-	metaBytes, _ := json.Marshal(ext.Meta)
+	if len(outputs) > 0 {
+		metaMap[types.OutputsMetaKey] = outputs
+	}
+	metaBytes, _ := json.Marshal(metaMap)
 
+	maxLen := len(primaryContent)
+	for _, content := range outputs {
+		if len(content) > maxLen {
+			maxLen = len(content)
+		}
+	}
 	doc := store.Document{
 		JobID:        task.JobID,
 		RequestedURL: task.RequestedURL,
 		FinalURL:     finalURL,
 		Title:        ext.Title,
-		ContentMD:    content,
-		ContentRaw:   content,
+		ContentMD:    primaryContent,
+		ContentRaw:   primaryContent,
 		Meta:         metaBytes,
 	}
-	if cfg.JobDefaults.MaxBytes > 0 && int64(len(doc.ContentMD)) > cfg.JobDefaults.MaxBytes.Int64() {
+	if cfg.JobDefaults.MaxBytes > 0 && int64(maxLen) > cfg.JobDefaults.MaxBytes.Int64() {
 		return fmt.Errorf("content exceeds max_bytes")
 	}
 	if err := st.InsertDocument(ctx, doc); err != nil {

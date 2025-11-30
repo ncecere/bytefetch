@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -35,14 +36,16 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 		if err != nil {
 			return internalError(c, err.Error())
 		}
-		content, err := format.FormatContent(ext, req.OutputFormat)
+		formats := req.OutputFormats.Values("markdown")
+		outputMap, err := renderOutputs(ext, formats)
 		if err != nil {
 			return badRequest(c, err.Error())
 		}
+		ordered := orderedOutputs(outputMap, formats)
 		reqID := reqID(c)
-		log.Printf("[API] req_id=%s action=scrape url=%s format=%s js=%t", reqID, req.URL, req.OutputFormat, req.UseJS)
+		log.Printf("[API] req_id=%s action=scrape url=%s formats=%v js=%t", reqID, req.URL, formats, req.UseJS)
 		return c.JSON(fiber.Map{
-			"content": content,
+			"outputs": ordered,
 			"meta":    ext.Meta,
 		})
 	})
@@ -158,11 +161,11 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 		if err != nil {
 			return internalError(c, err.Error())
 		}
-		format := formatFromJob(job)
+		preferredFormats := formatsFromJob(job)
 		resp := make([]documentResponse, 0, len(rows))
 		var nextCursor int64
 		for _, r := range rows {
-			resp = append(resp, documentFromRow(r, job, format))
+			resp = append(resp, documentFromRow(r, job, preferredFormats))
 		}
 		if len(rows) > 0 {
 			nextCursor = rows[len(rows)-1].ID
@@ -220,12 +223,11 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 		if err != nil {
 			return notFound(c, "job not found")
 		}
-		format := formatFromJob(job)
-
 		switch typ {
 		case "documents":
 			var rows []store.DocumentRow
 			cursor := after
+			preferredFormats := formatsFromJob(job)
 			for {
 				if cursor > 0 {
 					rows, err = deps.Store.ListDocumentsAfter(c.Context(), jobID, limit, cursor, sort, orderBy)
@@ -239,7 +241,7 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 					break
 				}
 				for _, r := range rows {
-					out := documentFromRow(r, job, format)
+					out := documentFromRow(r, job, preferredFormats)
 					line, _ := json.Marshal(out)
 					c.Write(line)
 					c.Write([]byte("\n"))
@@ -311,23 +313,43 @@ func parsePaginationAndCursor(c *fiber.Ctx) (limit, offset int, after int64) {
 	return
 }
 
-type documentResponse struct {
-	ID      int64  `json:"id"`
-	JobID   string `json:"job_id"`
-	Content string `json:"content"`
+type documentOutput struct {
 	Format  string `json:"format"`
-	Meta    any    `json:"meta"`
+	Content string `json:"content"`
 }
 
-func formatFromJob(job *store.Job) string {
+type documentResponse struct {
+	ID      int64            `json:"id"`
+	JobID   string           `json:"job_id"`
+	Outputs []documentOutput `json:"outputs"`
+	Meta    any              `json:"meta"`
+}
+
+const defaultOutputFormat = format.FormatMarkdown
+
+func documentFromRow(r store.DocumentRow, job *store.Job, preferred []string) documentResponse {
+	meta := buildMeta(r.Meta, job, r.RequestedURL, r.FinalURL)
+	outputs, cleanedMeta := extractOutputs(meta, preferred, r.ContentMD)
+	return documentResponse{
+		ID:      r.ID,
+		JobID:   r.JobID,
+		Outputs: outputs,
+		Meta:    cleanedMeta,
+	}
+}
+
+func formatsFromJob(job *store.Job) []string {
+	if len(job.Params) == 0 {
+		return []string{defaultOutputFormat}
+	}
 	var params map[string]any
-	if len(job.Params) > 0 {
-		_ = json.Unmarshal(job.Params, &params)
+	if err := json.Unmarshal(job.Params, &params); err != nil {
+		return []string{defaultOutputFormat}
 	}
-	if v, ok := params["output_format"].(string); ok && v != "" {
-		return v
+	if raw, ok := params["output_format"]; ok {
+		return types.FormatsFromAny(raw, defaultOutputFormat)
 	}
-	return "markdown"
+	return []string{defaultOutputFormat}
 }
 
 func nullableTime(t sql.NullTime) *time.Time {
@@ -348,6 +370,113 @@ func buildMeta(raw []byte, job *store.Job, requestedURL, finalURL string) map[st
 		meta["expires_at"] = t.Format(time.RFC3339)
 	}
 	return meta
+}
+
+func renderOutputs(ext *extract.Extracted, formats []string) (map[string]string, error) {
+	out := make(map[string]string, len(formats))
+	for _, fmt := range formats {
+		if _, ok := out[fmt]; ok {
+			continue
+		}
+		content, err := format.FormatContent(ext, fmt)
+		if err != nil {
+			return nil, err
+		}
+		out[fmt] = content
+	}
+	return out, nil
+}
+
+func extractOutputs(meta map[string]any, preferred []string, fallback string) ([]documentOutput, map[string]any) {
+	raw, ok := meta[types.OutputsMetaKey]
+	if !ok {
+		return fallbackOutputs(preferred, fallback), meta
+	}
+	delete(meta, types.OutputsMetaKey)
+	outputMap := make(map[string]string)
+	switch v := raw.(type) {
+	case map[string]any:
+		for key, val := range v {
+			if content, ok := val.(string); ok {
+				outputMap[strings.ToLower(key)] = content
+			}
+		}
+	case map[string]string:
+		for key, content := range v {
+			outputMap[strings.ToLower(key)] = content
+		}
+	case []any:
+		for _, item := range v {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			formatVal, _ := m["format"].(string)
+			content, _ := m["content"].(string)
+			if formatVal == "" || content == "" {
+				continue
+			}
+			outputMap[strings.ToLower(formatVal)] = content
+		}
+	}
+	ordered := orderedOutputs(outputMap, preferred)
+	if len(ordered) == 0 {
+		return fallbackOutputs(preferred, fallback), meta
+	}
+	return ordered, meta
+}
+
+func orderedOutputs(outputs map[string]string, preferred []string) []documentOutput {
+	fmtOrder := ensurePreferred(preferred)
+	result := make([]documentOutput, 0, len(outputs))
+	seen := make(map[string]struct{})
+	add := func(format string) {
+		format = strings.ToLower(format)
+		if _, ok := seen[format]; ok {
+			return
+		}
+		content, ok := outputs[format]
+		if !ok {
+			return
+		}
+		seen[format] = struct{}{}
+		result = append(result, documentOutput{Format: format, Content: content})
+	}
+	for _, fmt := range fmtOrder {
+		add(fmt)
+	}
+	for fmt := range outputs {
+		add(fmt)
+	}
+	return result
+}
+
+func fallbackOutputs(preferred []string, content string) []documentOutput {
+	fmtOrder := ensurePreferred(preferred)
+	return []documentOutput{{Format: fmtOrder[0], Content: content}}
+}
+
+func ensurePreferred(preferred []string) []string {
+	if len(preferred) == 0 {
+		return []string{defaultOutputFormat}
+	}
+	out := make([]string, 0, len(preferred))
+	seen := make(map[string]struct{})
+	for _, fmt := range preferred {
+		fmt = strings.ToLower(fmt)
+		if fmt == "" {
+			continue
+		}
+		if _, ok := seen[fmt]; ok {
+			continue
+		}
+		seen[fmt] = struct{}{}
+		out = append(out, fmt)
+	}
+	if len(out) == 0 {
+		return []string{defaultOutputFormat}
+	}
+	return out
 }
 
 func writeCursorLine(c *fiber.Ctx, cursor int64, sortDir, orderBy string) {

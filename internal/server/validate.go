@@ -12,8 +12,10 @@ func validateScrapeRequest(req *types.ScrapeRequest) error {
 	if req.URL == "" || !validURL(req.URL) {
 		return errBadURL
 	}
-	if !validFormat(req.OutputFormat) {
-		return errBadFormat
+	for _, format := range req.OutputFormats.Values("markdown") {
+		if !validFormat(format) {
+			return errBadFormat
+		}
 	}
 	return nil
 }
@@ -27,8 +29,10 @@ func validateBatchRequest(req *types.BatchScrapeRequest) error {
 			return errBadURL
 		}
 	}
-	if !validFormat(req.OutputFormat) {
-		return errBadFormat
+	for _, format := range req.OutputFormats.Values("markdown") {
+		if !validFormat(format) {
+			return errBadFormat
+		}
 	}
 	return nil
 }
@@ -40,8 +44,10 @@ func validateCrawlRequest(req *types.CrawlRequest) error {
 	if req.MaxDepth < 0 {
 		return errBadDepth
 	}
-	if !validFormat(req.OutputFormat) {
-		return errBadFormat
+	for _, format := range req.OutputFormats.Values("markdown") {
+		if !validFormat(format) {
+			return errBadFormat
+		}
 	}
 	return nil
 }

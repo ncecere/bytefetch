@@ -163,10 +163,14 @@ These apply when a request does not override them.
 
 Assuming the API server listens on `localhost:8080`.
 
+### Output Formats
+
+All endpoints that accept `output_format` now support either a single string or an array of formats. Supported values are `markdown` (default), `html`, and `text`. Responses return an `outputs` array ordered by your requested preference (first entry is the primary). Each entry is `{format, content}`. Stored documents and export streams embed the same structure so downstream tools can choose whichever representation they need without re-rendering.
+
 ### Scrape (synchronous)
 
 - `url` *(required)*: page to fetch.
-- `output_format` *(required)*: `markdown`, `html`, or `text`.
+- `output_format` *(optional)*: string or list (see above); defaults to `markdown`.
 - `use_js` *(optional, default `false`)*: render with headless Chromium before extraction.
 
 **Minimal request**
@@ -176,13 +180,13 @@ curl -X POST http://localhost:8080/v1/scrape \
   -d '{"url":"https://example.com","output_format":"text"}' | jq
 ```
 
-**Full request**
+**Full request (multiple outputs + JS)**
 ```bash
 curl -X POST http://localhost:8080/v1/scrape \
   -H "Content-Type: application/json" \
   -d '{
         "url":"https://example.com",
-        "output_format":"markdown",
+        "output_format":["markdown","html","text"],
         "use_js":true
       }' | jq
 ```
@@ -190,7 +194,11 @@ curl -X POST http://localhost:8080/v1/scrape \
 **Response shape**
 ```json
 {
-  "content": "...rendered body...",
+  "outputs": [
+    {"format":"markdown","content":"..."},
+    {"format":"html","content":"<body>...</body>"},
+    {"format":"text","content":"...plain text..."}
+  ],
   "meta": {
     "title": "Example Domain",
     "site_name": "",
@@ -204,7 +212,7 @@ curl -X POST http://localhost:8080/v1/scrape \
 ### Batch Scrape (asynchronous)
 
 - `urls` *(required)*: array of URLs to scrape independently.
-- `output_format` *(required)*: same options as scrape.
+- `output_format` *(optional)*: single format or list; defaults to `markdown`.
 - `use_js` *(optional)*: render each URL using the browser pool.
 
 **Minimal request**
@@ -214,13 +222,13 @@ curl -X POST http://localhost:8080/v1/batch/scrape \
   -d '{"urls":["https://example.com","https://example.com/about"],"output_format":"text"}' | jq
 ```
 
-**Full request**
+**Full request (multi-format)**
 ```bash
 curl -X POST http://localhost:8080/v1/batch/scrape \
   -H "Content-Type: application/json" \
   -d '{
         "urls":["https://example.com","https://example.com/about"],
-        "output_format":"markdown",
+        "output_format":["markdown","text"],
         "use_js":true
       }' | jq
 ```
@@ -260,8 +268,10 @@ Response:
     {
       "id": 9,
       "job_id": "{job_id}",
-      "content": "...",
-      "format": "text",
+      "outputs": [
+        {"format":"text","content":"..."},
+        {"format":"markdown","content":"..."}
+      ],
       "meta": {
         "crawl_url": "https://example.com",
         "created_at": "2025-11-30T04:45:41Z",
@@ -283,7 +293,7 @@ Use `after={next_cursor}` to paginate forward.
 - `url` *(required)*: initial seed URL.
 - `max_depth` *(optional, default `job_defaults.max_depth`)*: traversal depth.
 - `same_domain` *(optional, default `false`)*: restrict links to same domain/subdomain.
-- `output_format` *(required)*: document format for stored pages.
+- `output_format` *(optional)*: single or multiple formats (default `markdown`).
 - `use_js` *(optional)*: render each page.
 - `include_sitemaps` *(optional, default `false`)*: enqueue sitemap URLs at depth 0.
 
@@ -291,7 +301,7 @@ Use `after={next_cursor}` to paginate forward.
 ```bash
 curl -X POST http://localhost:8080/v1/crawl \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com","output_format":"text"}' | jq
+  -d '{"url":"https://example.com","output_format":["markdown","text"]}' | jq
 ```
 
 **Full request**
@@ -302,7 +312,7 @@ curl -X POST http://localhost:8080/v1/crawl \
         "url":"https://example.com",
         "max_depth":2,
         "same_domain":true,
-        "output_format":"markdown",
+        "output_format":["markdown","text","html"],
         "use_js":true,
         "include_sitemaps":true
       }' | jq
@@ -311,15 +321,17 @@ curl -X POST http://localhost:8080/v1/crawl \
 **Job status & documents**
 Use the same endpoints shown under batch scrape (`/v1/jobs/{id}` and `/v1/jobs/{id}/documents`)—crawl jobs include `crawl_url` plus `requested_url`/`final_url` metadata per document.
 
-**NDJSON export**
+**NDJSON export (documents)**
 ```bash
 curl -s "http://localhost:8080/v1/jobs/{job_id}/export?type=documents&all=true" \
   -H "Accept: application/x-ndjson"
 ```
-The last line includes:
+Sample lines (pretty-printed for clarity):
 ```json
+{"id":9,"job_id":"{job_id}","outputs":[{"format":"markdown","content":"..."},{"format":"text","content":"..."}],"meta":{"created_at":"...","title":"..."}}
 {"type":"cursor","next_cursor":123,"sort":"asc","sort_by":"id"}
 ```
+Each document line mirrors `/documents`, and the final line is always the cursor marker.
 
 ### Map (asynchronous link discovery)
 

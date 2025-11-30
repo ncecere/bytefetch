@@ -24,9 +24,9 @@ func TestDocumentFromRow(t *testing.T) {
 		ContentMD:    "body",
 		Meta:         raw,
 	}
-	resp := documentFromRow(row, job, "text")
-	if resp.Content != "body" {
-		t.Fatalf("expected content body, got %s", resp.Content)
+	resp := documentFromRow(row, job, []string{"text"})
+	if len(resp.Outputs) != 1 || resp.Outputs[0].Format != "text" {
+		t.Fatalf("expected single output honoring preferred format, got %#v", resp.Outputs)
 	}
 	metaResp, ok := resp.Meta.(map[string]any)
 	if !ok {
