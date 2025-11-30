@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/nickcecere/bullnose/internal/metrics"
+	"github.com/ncecere/bullnose/internal/metrics"
 )
 
 // Run deletes expired jobs and related data periodically.

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/nickcecere/bullnose/internal/config"
+	"github.com/ncecere/bullnose/internal/config"
 	goose "github.com/pressly/goose/v3"
 )
 

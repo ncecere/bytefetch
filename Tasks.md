@@ -27,3 +27,31 @@
 ## 6. Testing
 - [x] Add/adjust unit tests covering the new helper functions (document formatter, dedupe helper, order clause builder).
 - [x] Re-run `go test ./...` and update any test fixtures impacted by refactors.
+
+# Format Enhancements Roadmap
+
+## 1. Summary Format (`summary`)
+- [ ] Add config for OpenAI-compatible summarizer (base URL, API key, default model) and surface via YAML/env.
+- [ ] Implement client helper that sends extracted text to the configured API and returns a summary.
+- [ ] Extend request validation + formatter to support `"summary"` and persist summarized content.
+- [ ] Add tests + README instructions for configuring the summarizer.
+
+## 2. Screenshot Format (`screenshot`)
+- [ ] Define API contract for screenshot options (fullPage, quality, viewport) and extend requests schema.
+- [ ] Enhance renderer/fetcher to capture screenshots (Rod `Screenshot`), respecting options.
+- [ ] Store screenshot blobs/URLs in documents and expose via export endpoints.
+
+## 3. Links Format (`links`)
+- [ ] Add extractor logic to capture link metadata (href + text + rel attributes).
+- [ ] Implement a formatter that returns only the link list when `output_format="links"`.
+- [ ] Document new format and add endpoint tests.
+
+## 4. JSON Format (`json`)
+- [ ] Define JSON schema for structured output (content, metadata, links, images, screenshot info).
+- [ ] Add formatter that emits JSON per document and update export endpoints to bypass Markdown/text conversion when requested.
+- [ ] Update README/export docs to describe the JSON structure.
+
+## 5. Images Format (`images`)
+- [ ] Enhance extractor to collect image URLs (src, alt, title, dimensions if available).
+- [ ] Add formatter that returns only image data for `output_format="images"` (possibly with download option).
+- [ ] Cover with tests and README updates.

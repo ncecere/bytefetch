@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickcecere/bullnose/internal/config"
+	"github.com/ncecere/bullnose/internal/config"
 )
 
 func TestFilterLinksSameDomainAndBlocked(t *testing.T) {

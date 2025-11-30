@@ -13,16 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickcecere/bullnose/internal/config"
-	"github.com/nickcecere/bullnose/internal/db"
-	"github.com/nickcecere/bullnose/internal/extract"
-	"github.com/nickcecere/bullnose/internal/fetch"
-	formatpkg "github.com/nickcecere/bullnose/internal/format"
-	"github.com/nickcecere/bullnose/internal/logging"
-	"github.com/nickcecere/bullnose/internal/metrics"
-	"github.com/nickcecere/bullnose/internal/robots"
-	"github.com/nickcecere/bullnose/internal/store"
-	"github.com/nickcecere/bullnose/internal/urlutil"
+	"github.com/ncecere/bullnose/internal/config"
+	"github.com/ncecere/bullnose/internal/db"
+	"github.com/ncecere/bullnose/internal/extract"
+	"github.com/ncecere/bullnose/internal/fetch"
+	formatpkg "github.com/ncecere/bullnose/internal/format"
+	"github.com/ncecere/bullnose/internal/logging"
+	"github.com/ncecere/bullnose/internal/metrics"
+	"github.com/ncecere/bullnose/internal/robots"
+	"github.com/ncecere/bullnose/internal/store"
+	"github.com/ncecere/bullnose/internal/urlutil"
 )
 
 type taskPlanner interface {

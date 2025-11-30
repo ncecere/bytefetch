@@ -1,6 +1,6 @@
 package server
 
-import "github.com/nickcecere/bullnose/internal/store"
+import "github.com/ncecere/bullnose/internal/store"
 
 func documentFromRow(r store.DocumentRow, job *store.Job, format string) documentResponse {
 	meta := buildMeta(r.Meta, job, r.RequestedURL, r.FinalURL)

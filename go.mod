@@ -1,4 +1,4 @@
-module github.com/nickcecere/bullnose
+module github.com/ncecere/bullnose
 
 go 1.25.4
 

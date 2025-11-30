@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickcecere/bullnose/internal/store"
+	"github.com/ncecere/bullnose/internal/store"
 )
 
 func TestDocumentFromRow(t *testing.T) {

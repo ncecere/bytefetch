@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickcecere/bullnose/internal/cleanup"
-	"github.com/nickcecere/bullnose/internal/config"
-	"github.com/nickcecere/bullnose/internal/migrate"
-	"github.com/nickcecere/bullnose/internal/server"
-	"github.com/nickcecere/bullnose/internal/worker"
+	"github.com/ncecere/bullnose/internal/cleanup"
+	"github.com/ncecere/bullnose/internal/config"
+	"github.com/ncecere/bullnose/internal/migrate"
+	"github.com/ncecere/bullnose/internal/server"
+	"github.com/ncecere/bullnose/internal/worker"
 )
 
 func main() {

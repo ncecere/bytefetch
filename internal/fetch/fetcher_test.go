@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickcecere/bullnose/internal/config"
+	"github.com/ncecere/bullnose/internal/config"
 )
 
 func TestFetcherFetchHTTP(t *testing.T) {

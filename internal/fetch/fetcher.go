@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nickcecere/bullnose/internal/config"
-	"github.com/nickcecere/bullnose/internal/metrics"
+	"github.com/ncecere/bullnose/internal/config"
+	"github.com/ncecere/bullnose/internal/metrics"
 )
 
 type Result struct {
