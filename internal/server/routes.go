@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -10,37 +9,11 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/nickcecere/bullnose/internal/config"
 	"github.com/nickcecere/bullnose/internal/extract"
-	"github.com/nickcecere/bullnose/internal/fetch"
 	"github.com/nickcecere/bullnose/internal/format"
 	"github.com/nickcecere/bullnose/internal/store"
 	"github.com/nickcecere/bullnose/internal/types"
-	"github.com/nickcecere/bullnose/internal/urlutil"
 )
-
-type HandlerDeps struct {
-	Store   jobStore
-	Fetcher contentFetcher
-	Config  *config.Config
-}
-
-type jobStore interface {
-	DB() *sql.DB
-	InsertJob(ctx context.Context, tx *sql.Tx, jobType string, params []byte, expiresAt, deadline time.Time) (string, error)
-	InsertTasks(ctx context.Context, tx *sql.Tx, jobID string, tasks []store.Task) error
-	HasSeenCanonical(ctx context.Context, url string) (bool, error)
-	GetJob(ctx context.Context, jobID string) (*store.Job, error)
-	JobStats(ctx context.Context, jobID string) (store.JobStats, error)
-	ListDocuments(ctx context.Context, jobID string, limit, offset int, sort, orderBy string) ([]store.DocumentRow, error)
-	ListDocumentsAfter(ctx context.Context, jobID string, limit int, afterCursor int64, sort, orderBy string) ([]store.DocumentRow, error)
-	ListMapped(ctx context.Context, jobID string, limit, offset int, sort, orderBy string) ([]store.MappedRow, error)
-	ListMappedAfter(ctx context.Context, jobID string, limit int, afterCursor int64, sort, orderBy string) ([]store.MappedRow, error)
-}
-
-type contentFetcher interface {
-	Fetch(ctx context.Context, rawURL string, useJS bool) (*fetch.Result, error)
-}
 
 func registerRoutes(app *fiber.App, deps HandlerDeps) {
 	v1 := app.Group("/v1")
@@ -82,41 +55,15 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 		if err := validateBatchRequest(&req); err != nil {
 			return badRequest(c, err.Error())
 		}
-		params, _ := json.Marshal(req)
-		expiresAt := time.Now().Add(deps.Config.JobDefaults.TTL)
-		deadline := time.Now().Add(deps.Config.JobDefaults.Deadline)
-		tx, err := deps.Store.DB().BeginTx(c.Context(), nil)
-		if err != nil {
-			return internalError(c, err.Error())
-		}
-		jobID, err := deps.Store.InsertJob(c.Context(), tx, "batch_scrape", params, expiresAt, deadline)
-		if err != nil {
-			tx.Rollback()
-			return internalError(c, err.Error())
-		}
-		tasks := make([]store.Task, 0, len(req.URLs))
+		seeds := make([]taskSeed, 0, len(req.URLs))
 		for _, u := range req.URLs {
-			canon := u
-			if cu, err := urlutil.Canonicalize(u, deps.Config.Crawl.StripQuery); err == nil {
-				canon = cu
-			}
-			if deps.Config.Crawl.DedupeCache {
-				if seen, err := deps.Store.HasSeenCanonical(c.Context(), canon); err == nil && seen {
-					continue
-				}
-			}
-			tasks = append(tasks, store.Task{
-				RequestedURL: u,
-				FinalURL:     canon,
-				Depth:        0,
-				Status:       store.TaskStatusQueued,
-			})
+			seeds = append(seeds, taskSeed{RequestedURL: u, Depth: 0})
 		}
-		if err := deps.Store.InsertTasks(c.Context(), tx, jobID, tasks); err != nil {
-			tx.Rollback()
-			return internalError(c, err.Error())
-		}
-		if err := tx.Commit(); err != nil {
+		jobID, err := createJobWithSeeds(c.Context(), deps, "batch_scrape", req, seeds)
+		if err != nil {
+			if err == errSeedAlreadyProcessed {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{"job_id": "", "error": err.Error()})
+			}
 			return internalError(c, err.Error())
 		}
 		log.Printf("[API] req_id=%s action=batch_scrape job_id=%s urls=%d", reqID(c), jobID, len(req.URLs))
@@ -131,43 +78,16 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 		if err := validateCrawlRequest(&req); err != nil {
 			return badRequest(c, err.Error())
 		}
-		finalURL := req.URL
-		if cu, err := urlutil.Canonicalize(req.URL, deps.Config.Crawl.StripQuery); err == nil {
-			finalURL = cu
-		}
-		if deps.Config.Crawl.DedupeCache {
-			if seen, err := deps.Store.HasSeenCanonical(c.Context(), finalURL); err == nil && seen {
+		jobID, err := createJobWithSeeds(c.Context(), deps, "crawl", req, []taskSeed{
+			{RequestedURL: req.URL, Depth: 0, AbortIfDuplicate: deps.Config.Crawl.DedupeCache},
+		})
+		if err != nil {
+			if err == errSeedAlreadyProcessed {
 				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 					"job_id": "",
 					"error":  "seed URL already processed",
 				})
-			} else if err != nil {
-				return internalError(c, err.Error())
 			}
-		}
-		params, _ := json.Marshal(req)
-		expiresAt := time.Now().Add(deps.Config.JobDefaults.TTL)
-		deadline := time.Now().Add(deps.Config.JobDefaults.Deadline)
-		tx, err := deps.Store.DB().BeginTx(c.Context(), nil)
-		if err != nil {
-			return internalError(c, err.Error())
-		}
-		jobID, err := deps.Store.InsertJob(c.Context(), tx, "crawl", params, expiresAt, deadline)
-		if err != nil {
-			tx.Rollback()
-			return internalError(c, err.Error())
-		}
-		task := store.Task{
-			RequestedURL: req.URL,
-			FinalURL:     finalURL,
-			Depth:        0,
-			Status:       store.TaskStatusQueued,
-		}
-		if err := deps.Store.InsertTasks(c.Context(), tx, jobID, []store.Task{task}); err != nil {
-			tx.Rollback()
-			return internalError(c, err.Error())
-		}
-		if err := tx.Commit(); err != nil {
 			return internalError(c, err.Error())
 		}
 		log.Printf("[API] req_id=%s action=crawl job_id=%s url=%s depth=%d", reqID(c), jobID, req.URL, req.MaxDepth)
@@ -182,43 +102,16 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 		if err := validateMapRequest(&req); err != nil {
 			return badRequest(c, err.Error())
 		}
-		finalURL := req.URL
-		if cu, err := urlutil.Canonicalize(req.URL, deps.Config.Crawl.StripQuery); err == nil {
-			finalURL = cu
-		}
-		if deps.Config.Crawl.DedupeCache {
-			if seen, err := deps.Store.HasSeenCanonical(c.Context(), finalURL); err == nil && seen {
+		jobID, err := createJobWithSeeds(c.Context(), deps, "map", req, []taskSeed{
+			{RequestedURL: req.URL, Depth: 0, AbortIfDuplicate: deps.Config.Crawl.DedupeCache},
+		})
+		if err != nil {
+			if err == errSeedAlreadyProcessed {
 				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 					"job_id": "",
 					"error":  "seed URL already processed",
 				})
-			} else if err != nil {
-				return internalError(c, err.Error())
 			}
-		}
-		params, _ := json.Marshal(req)
-		expiresAt := time.Now().Add(deps.Config.JobDefaults.TTL)
-		deadline := time.Now().Add(deps.Config.JobDefaults.Deadline)
-		tx, err := deps.Store.DB().BeginTx(c.Context(), nil)
-		if err != nil {
-			return internalError(c, err.Error())
-		}
-		jobID, err := deps.Store.InsertJob(c.Context(), tx, "map", params, expiresAt, deadline)
-		if err != nil {
-			tx.Rollback()
-			return internalError(c, err.Error())
-		}
-		task := store.Task{
-			RequestedURL: req.URL,
-			FinalURL:     finalURL,
-			Depth:        0,
-			Status:       store.TaskStatusQueued,
-		}
-		if err := deps.Store.InsertTasks(c.Context(), tx, jobID, []store.Task{task}); err != nil {
-			tx.Rollback()
-			return internalError(c, err.Error())
-		}
-		if err := tx.Commit(); err != nil {
 			return internalError(c, err.Error())
 		}
 		log.Printf("[API] req_id=%s action=map job_id=%s url=%s depth=%d", reqID(c), jobID, req.URL, req.MaxDepth)
@@ -269,14 +162,7 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 		resp := make([]documentResponse, 0, len(rows))
 		var nextCursor int64
 		for _, r := range rows {
-			meta := buildMeta(r.Meta, job, r.RequestedURL, r.FinalURL)
-			resp = append(resp, documentResponse{
-				ID:      r.ID,
-				JobID:   r.JobID,
-				Content: r.ContentMD,
-				Format:  format,
-				Meta:    meta,
-			})
+			resp = append(resp, documentFromRow(r, job, format))
 		}
 		if len(rows) > 0 {
 			nextCursor = rows[len(rows)-1].ID
@@ -353,14 +239,7 @@ func registerRoutes(app *fiber.App, deps HandlerDeps) {
 					break
 				}
 				for _, r := range rows {
-					meta := buildMeta(r.Meta, job, r.RequestedURL, r.FinalURL)
-					out := documentResponse{
-						ID:      r.ID,
-						JobID:   r.JobID,
-						Content: r.ContentMD,
-						Format:  format,
-						Meta:    meta,
-					}
+					out := documentFromRow(r, job, format)
 					line, _ := json.Marshal(out)
 					c.Write(line)
 					c.Write([]byte("\n"))

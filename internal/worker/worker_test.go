@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -47,4 +48,50 @@ func TestBackoffRespectsMax(t *testing.T) {
 			t.Fatalf("backoff exceeded max: %s", d)
 		}
 	}
+}
+
+func TestBuildLinkTasksDedupeAndLimit(t *testing.T) {
+	planner := &fakePlanner{
+		seen:  map[string]bool{"https://example.com/about": true},
+		count: 1,
+	}
+	cfg := &config.Config{
+		Crawl: config.CrawlConfig{
+			DedupeCache: true,
+		},
+		JobDefaults: config.JobDefaults{
+			MaxTasks: 2,
+		},
+	}
+	links := []string{
+		"https://example.com/",
+		"https://example.com/about",
+		"https://example.com/docs",
+	}
+	tasks, err := buildLinkTasks(context.Background(), planner, "job", links, 1, cfg)
+	if err != nil {
+		t.Fatalf("buildLinkTasks returned error: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task after dedupe/limit, got %d (%v)", len(tasks), tasks)
+	}
+	if tasks[0].RequestedURL != "https://example.com/" {
+		t.Fatalf("unexpected task URL %s", tasks[0].RequestedURL)
+	}
+}
+
+type fakePlanner struct {
+	seen  map[string]bool
+	count int
+}
+
+func (f *fakePlanner) HasSeenCanonical(ctx context.Context, url string) (bool, error) {
+	if f.seen == nil {
+		return false, nil
+	}
+	return f.seen[url], nil
+}
+
+func (f *fakePlanner) TaskCount(ctx context.Context, jobID string) (int, error) {
+	return f.count, nil
 }

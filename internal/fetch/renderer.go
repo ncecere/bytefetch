@@ -90,12 +90,13 @@ func (r *Renderer) Close() {
 	r.mu.Unlock()
 }
 
-func (r *Renderer) Render(ctx context.Context, rawURL string, cfg config.BrowserConfig) (*Result, error) {
+func (r *Renderer) Render(ctx context.Context, rawURL string) (*Result, error) {
 	if !r.cfg.Enabled {
 		return nil, fmt.Errorf("renderer disabled")
 	}
 	releaseHost, err := r.acquireHost(ctx, rawURL)
 	if err != nil {
+		metrics.BrowserRenderFailures.WithLabelValues(hostFromURL(rawURL), "acquire_host").Inc()
 		return nil, err
 	}
 	defer releaseHost()
@@ -106,6 +107,7 @@ func (r *Renderer) Render(ctx context.Context, rawURL string, cfg config.Browser
 	default:
 		page, err := r.newPage()
 		if err != nil {
+			metrics.BrowserRenderFailures.WithLabelValues(hostFromURL(rawURL), "new_page").Inc()
 			return nil, err
 		}
 		p = &pooledPage{page: page, acquired: time.Now()}
@@ -118,17 +120,19 @@ func (r *Renderer) Render(ctx context.Context, rawURL string, cfg config.Browser
 		metrics.BrowserPoolInUse.Dec()
 	}()
 
-	pctx := p.page.Timeout(cfg.NavTimeout)
+	pctx := p.page.Timeout(r.cfg.NavTimeout)
 	if err := pctx.Navigate(rawURL); err != nil {
+		metrics.BrowserRenderFailures.WithLabelValues(hostFromURL(rawURL), "navigate").Inc()
 		return nil, err
 	}
 	pctx.MustWaitLoad()
 
 	// Wait for network idle-ish.
-	time.Sleep(cfg.WaitIdleTimeout)
+	time.Sleep(r.cfg.WaitIdleTimeout)
 
 	html, err := pctx.HTML()
 	if err != nil {
+		metrics.BrowserRenderFailures.WithLabelValues(hostFromURL(rawURL), "html").Inc()
 		return nil, err
 	}
 	finalURL := pctx.MustInfo().URL
@@ -206,14 +210,24 @@ func (r *Renderer) acquireHost(ctx context.Context, rawURL string) (func(), erro
 	case ch <- struct{}{}:
 		metrics.BrowserHostInFlight.WithLabelValues(host).Inc()
 		return func() {
-			select {
-			case <-ch:
-				metrics.BrowserHostInFlight.WithLabelValues(host).Dec()
-			default:
-			}
+			r.releaseHostSem(host, ch)
 		}, nil
 	case <-ctx.Done():
 		return func() {}, ctx.Err()
+	}
+}
+
+func (r *Renderer) releaseHostSem(host string, ch chan struct{}) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	select {
+	case <-ch:
+		if len(ch) == 0 {
+			metrics.BrowserHostInFlight.DeleteLabelValues(host)
+		} else {
+			metrics.BrowserHostInFlight.WithLabelValues(host).Dec()
+		}
+	default:
 	}
 }
 

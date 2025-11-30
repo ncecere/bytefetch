@@ -25,6 +25,11 @@ import (
 	"github.com/nickcecere/bullnose/internal/urlutil"
 )
 
+type taskPlanner interface {
+	HasSeenCanonical(ctx context.Context, url string) (bool, error)
+	TaskCount(ctx context.Context, jobID string) (int, error)
+}
+
 // Start launches the worker loop. Task processing will be implemented next.
 func Start(ctx context.Context, cfg *config.Config) error {
 	logger := logging.New("worker")
@@ -175,81 +180,14 @@ func handleTask(ctx context.Context, st *store.Store, fetcher *fetch.Fetcher, li
 }
 
 func processDocumentTask(ctx context.Context, st *store.Store, fetcher *fetch.Fetcher, limiter *hostLimiter, robotsClient *robots.Client, task *store.Task, params map[string]any, cfg *config.Config, jobType string) (*extract.Extracted, error) {
-	useJS := getBool(params, "use_js")
-	outFormat := getString(params, "output_format")
-
-	if cfg.Crawl.RespectRobots && !robotsClient.Allowed(task.RequestedURL, cfg.HTTP.UserAgent) {
-		return nil, fmt.Errorf("blocked by robots")
+	if err := ensureRobotsAllowed(cfg, robotsClient, task.RequestedURL, cfg.HTTP.UserAgent); err != nil {
+		return nil, err
 	}
 	defaultDelay := time.Duration(cfg.Crawl.CrawlDelayMS) * time.Millisecond
 	if err := robotsClient.Wait(ctx, task.RequestedURL, cfg.HTTP.UserAgent, defaultDelay); err != nil {
 		return nil, err
 	}
-
-	fetchStart := time.Now()
-	res, err := fetchWithLimit(ctx, limiter, fetcher, task.RequestedURL, useJS)
-	if err != nil {
-		return nil, err
-	}
-	canonFinal := res.FinalURL
-	if cf, err := urlutil.Canonicalize(res.FinalURL, cfg.Crawl.StripQuery); err == nil {
-		canonFinal = cf
-	}
-	host := hostFromURL(canonFinal)
-	metrics.FetchDuration.WithLabelValues(host, fmt.Sprintf("%t", useJS)).Observe(time.Since(fetchStart).Seconds())
-	if canonFinal != "" && canonFinal != task.FinalURL {
-		_ = st.UpdateTaskFinalURL(ctx, task.ID, canonFinal)
-	}
-
-	extractStart := time.Now()
-	ext, err := extract.Extract(canonFinal, res.Body)
-	if err != nil {
-		return nil, err
-	}
-	metrics.ExtractDuration.WithLabelValues(host).Observe(time.Since(extractStart).Seconds())
-
-	if cfg.Crawl.RespectNofollow {
-		if robotsVal, ok := ext.Meta["robots"]; ok && strings.Contains(robotsVal, "nofollow") {
-			ext.Links = nil
-		}
-	}
-
-	content, err := formatpkg.FormatContent(ext, outFormat)
-	if err != nil {
-		return nil, err
-	}
-
-	// enrich meta with URLs and job context
-	delete(ext.Meta, "url")
-	if jobType == "crawl" {
-		if start := getString(params, "url"); start != "" {
-			ext.Meta["crawl_url"] = start
-		}
-	}
-
-	metaBytes, _ := json.Marshal(ext.Meta)
-
-	doc := store.Document{
-		JobID:        task.JobID,
-		RequestedURL: task.RequestedURL,
-		FinalURL:     canonFinal,
-		Title:        ext.Title,
-		ContentMD:    content,
-		ContentRaw:   content,
-		Meta:         metaBytes,
-	}
-	if cfg.JobDefaults.MaxBytes > 0 && int64(len(doc.ContentMD)) > cfg.JobDefaults.MaxBytes.Int64() {
-		return nil, fmt.Errorf("content exceeds max_bytes")
-	}
-	if err := st.InsertDocument(ctx, doc); err != nil {
-		return nil, err
-	}
-	if cfg.Crawl.DedupeCache {
-		if canon, err := urlutil.Canonicalize(res.FinalURL, cfg.Crawl.StripQuery); err == nil {
-			_ = st.MarkCanonical(ctx, canon)
-		}
-	}
-	return ext, nil
+	return fetchExtractAndStore(ctx, st, limiter, fetcher, task, params, cfg, jobType)
 }
 
 func processCrawlTask(ctx context.Context, st *store.Store, fetcher *fetch.Fetcher, limiter *hostLimiter, robotsClient *robots.Client, task *store.Task, params map[string]any, cfg *config.Config, jobType string) error {
@@ -266,51 +204,25 @@ func processCrawlTask(ctx context.Context, st *store.Store, fetcher *fetch.Fetch
 	if cfg.JobDefaults.MaxDuration > 0 && time.Since(task.CreatedAt) > cfg.JobDefaults.MaxDuration {
 		return fmt.Errorf("max_duration exceeded")
 	}
-
-	newLinks := filterLinks(task.RequestedURL, ext.Links, sameDomain, cfg)
-	if cfg.Crawl.IncludeSitemaps && getBool(params, "include_sitemaps") && task.Depth == 0 {
-		sitemapLinks := discoverSitemapLinks(ctx, fetcher, robotsClient, task, sameDomain, cfg)
-		newLinks = appendUniqueLinks(newLinks, sitemapLinks)
+	includeSitemaps := cfg.Crawl.IncludeSitemaps && getBool(params, "include_sitemaps")
+	links := collectLinks(ctx, fetcher, robotsClient, task, ext.Links, sameDomain, includeSitemaps, cfg)
+	if len(links) == 0 {
+		return nil
 	}
-	tasks := make([]store.Task, 0, len(newLinks))
 	nextDepth := task.Depth + 1
-	for _, link := range newLinks {
-		if cfg.Crawl.DedupeCache {
-			seen, err := st.HasSeenCanonical(ctx, link)
-			if err == nil && seen {
-				continue
-			}
-		}
-		tasks = append(tasks, store.Task{
-			RequestedURL: link,
-			FinalURL:     link,
-			Depth:        nextDepth,
-			Status:       store.TaskStatusQueued,
-		})
+	tasks, err := buildLinkTasks(ctx, st, task.JobID, links, nextDepth, cfg)
+	if err != nil {
+		return err
 	}
-	if len(tasks) > 0 {
-		limit := cfg.JobDefaults.MaxTasks
-		if limit > 0 {
-			current, err := st.TaskCount(ctx, task.JobID)
-			if err != nil {
-				return err
-			}
-			remaining := limit - current
-			if remaining <= 0 {
-				return nil
-			}
-			if len(tasks) > remaining {
-				tasks = tasks[:remaining]
-			}
-		}
-		return st.InsertTasks(ctx, nil, task.JobID, tasks)
+	if len(tasks) == 0 {
+		return nil
 	}
-	return nil
+	return st.InsertTasks(ctx, nil, task.JobID, tasks)
 }
 
 func processMapTask(ctx context.Context, st *store.Store, fetcher *fetch.Fetcher, limiter *hostLimiter, robotsClient *robots.Client, task *store.Task, params map[string]any, cfg *config.Config, jobType string) error {
-	if cfg.Crawl.RespectRobots && !robotsClient.Allowed(task.RequestedURL, cfg.HTTP.UserAgent) {
-		return fmt.Errorf("blocked by robots")
+	if err := ensureRobotsAllowed(cfg, robotsClient, task.RequestedURL, cfg.HTTP.UserAgent); err != nil {
+		return err
 	}
 	defaultDelay := time.Duration(cfg.Crawl.CrawlDelayMS) * time.Millisecond
 	if err := robotsClient.Wait(ctx, task.RequestedURL, cfg.HTTP.UserAgent, defaultDelay); err != nil {
@@ -327,29 +239,21 @@ func processMapTask(ctx context.Context, st *store.Store, fetcher *fetch.Fetcher
 	}
 
 	maxDepth := getInt(params, "max_depth")
-	sameDomain := getBool(params, "same_domain")
-	if task.Depth < maxDepth {
-		links := filterLinks(task.RequestedURL, ext.Links, sameDomain, cfg)
-		if cfg.Crawl.IncludeSitemaps && getBool(params, "include_sitemaps") && task.Depth == 0 {
-			sitemapLinks := discoverSitemapLinks(ctx, fetcher, robotsClient, task, sameDomain, cfg)
-			links = appendUniqueLinks(links, sitemapLinks)
-		}
-		nextDepth := task.Depth + 1
-		tasks := make([]store.Task, 0, len(links))
-		for _, link := range links {
-			tasks = append(tasks, store.Task{
-				RequestedURL: link,
-				FinalURL:     link,
-				Depth:        nextDepth,
-				Status:       store.TaskStatusQueued,
-			})
-			_ = st.InsertMapped(ctx, task.JobID, task.RequestedURL, link, nextDepth)
-		}
-		if len(tasks) > 0 {
-			return st.InsertTasks(ctx, nil, task.JobID, tasks)
-		}
+	if task.Depth >= maxDepth {
+		return nil
 	}
-	return nil
+	sameDomain := getBool(params, "same_domain")
+	includeSitemaps := cfg.Crawl.IncludeSitemaps && getBool(params, "include_sitemaps")
+	links := collectLinks(ctx, fetcher, robotsClient, task, ext.Links, sameDomain, includeSitemaps, cfg)
+	if len(links) == 0 {
+		return nil
+	}
+	nextDepth := task.Depth + 1
+	tasks, err := buildLinkTasks(ctx, st, task.JobID, links, nextDepth, cfg)
+	if err != nil {
+		return err
+	}
+	return enqueueMapLinks(ctx, st, task.JobID, task.RequestedURL, links, nextDepth, tasks)
 }
 
 func getBool(params map[string]any, key string) bool {
@@ -391,6 +295,190 @@ func fetchWithLimit(ctx context.Context, limiter *hostLimiter, fetcher *fetch.Fe
 		defer release()
 	}
 	return fetcher.Fetch(ctx, rawURL, useJS)
+}
+
+func ensureRobotsAllowed(cfg *config.Config, robotsClient *robots.Client, url, userAgent string) error {
+	if cfg.Crawl.RespectRobots && !robotsClient.Allowed(url, userAgent) {
+		return fmt.Errorf("blocked by robots")
+	}
+	return nil
+}
+
+func fetchExtractAndStore(ctx context.Context, st *store.Store, limiter *hostLimiter, fetcher *fetch.Fetcher, task *store.Task, params map[string]any, cfg *config.Config, jobType string) (*extract.Extracted, error) {
+	useJS := getBool(params, "use_js")
+	outFormat := getString(params, "output_format")
+
+	fetchStart := time.Now()
+	res, err := fetchWithLimit(ctx, limiter, fetcher, task.RequestedURL, useJS)
+	if err != nil {
+		return nil, err
+	}
+	canonFinal := res.FinalURL
+	if cf, err := urlutil.Canonicalize(res.FinalURL, cfg.Crawl.StripQuery); err == nil {
+		canonFinal = cf
+	}
+	host := hostFromURL(canonFinal)
+	metrics.FetchDuration.WithLabelValues(host, fmt.Sprintf("%t", useJS)).Observe(time.Since(fetchStart).Seconds())
+	if canonFinal != "" && canonFinal != task.FinalURL {
+		_ = st.UpdateTaskFinalURL(ctx, task.ID, canonFinal)
+	}
+
+	extractStart := time.Now()
+	ext, err := extract.Extract(canonFinal, res.Body)
+	if err != nil {
+		return nil, err
+	}
+	metrics.ExtractDuration.WithLabelValues(host).Observe(time.Since(extractStart).Seconds())
+
+	if cfg.Crawl.RespectNofollow {
+		if robotsVal, ok := ext.Meta["robots"]; ok && strings.Contains(robotsVal, "nofollow") {
+			ext.Links = nil
+		}
+	}
+
+	content, err := formatpkg.FormatContent(ext, outFormat)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := storeDocument(ctx, st, task, canonFinal, content, ext, params, cfg, jobType); err != nil {
+		return nil, err
+	}
+	return ext, nil
+}
+
+func storeDocument(ctx context.Context, st *store.Store, task *store.Task, finalURL, content string, ext *extract.Extracted, params map[string]any, cfg *config.Config, jobType string) error {
+	delete(ext.Meta, "url")
+	if jobType == "crawl" {
+		if start := getString(params, "url"); start != "" {
+			ext.Meta["crawl_url"] = start
+		}
+	}
+	metaBytes, _ := json.Marshal(ext.Meta)
+
+	doc := store.Document{
+		JobID:        task.JobID,
+		RequestedURL: task.RequestedURL,
+		FinalURL:     finalURL,
+		Title:        ext.Title,
+		ContentMD:    content,
+		ContentRaw:   content,
+		Meta:         metaBytes,
+	}
+	if cfg.JobDefaults.MaxBytes > 0 && int64(len(doc.ContentMD)) > cfg.JobDefaults.MaxBytes.Int64() {
+		return fmt.Errorf("content exceeds max_bytes")
+	}
+	if err := st.InsertDocument(ctx, doc); err != nil {
+		return err
+	}
+	if cfg.Crawl.DedupeCache {
+		if canon, err := urlutil.Canonicalize(finalURL, cfg.Crawl.StripQuery); err == nil {
+			_ = st.MarkCanonical(ctx, canon)
+		}
+	}
+	return nil
+}
+
+func collectLinks(ctx context.Context, fetcher *fetch.Fetcher, robotsClient *robots.Client, task *store.Task, rawLinks []string, sameDomain, includeSitemaps bool, cfg *config.Config) []string {
+	links := filterLinks(task.RequestedURL, rawLinks, sameDomain, cfg)
+	if includeSitemaps && task.Depth == 0 {
+		sitemapLinks := discoverSitemapLinks(ctx, fetcher, robotsClient, task, sameDomain, cfg)
+		links = appendUniqueLinks(links, sitemapLinks)
+	}
+	return uniqueStrings(links)
+}
+
+func buildLinkTasks(ctx context.Context, st taskPlanner, jobID string, links []string, depth int, cfg *config.Config) ([]store.Task, error) {
+	if len(links) == 0 {
+		return nil, nil
+	}
+	unique := uniqueStrings(links)
+	tasks := make([]store.Task, 0, len(unique))
+	for _, link := range unique {
+		if cfg.Crawl.DedupeCache {
+			if skipper, ok := any(st).(store.DedupeChecker); ok {
+				seen, err := store.ShouldSkipCanonical(ctx, skipper, link)
+				if err != nil {
+					return nil, err
+				}
+				if seen {
+					continue
+				}
+			}
+		}
+		tasks = append(tasks, store.Task{
+			RequestedURL: link,
+			FinalURL:     link,
+			Depth:        depth,
+			Status:       store.TaskStatusQueued,
+		})
+	}
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	if cfg.JobDefaults.MaxTasks > 0 {
+		current, err := st.TaskCount(ctx, jobID)
+		if err != nil {
+			return nil, err
+		}
+		remaining := cfg.JobDefaults.MaxTasks - current
+		if remaining <= 0 {
+			return nil, nil
+		}
+		if len(tasks) > remaining {
+			tasks = tasks[:remaining]
+		}
+	}
+	return tasks, nil
+}
+
+func enqueueMapLinks(ctx context.Context, st *store.Store, jobID, sourceURL string, links []string, depth int, tasks []store.Task) error {
+	if len(links) == 0 {
+		return nil
+	}
+	tx, err := st.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	inserts := make([]store.MappedInsert, 0, len(links))
+	for _, link := range links {
+		inserts = append(inserts, store.MappedInsert{
+			JobID:     jobID,
+			SourceURL: sourceURL,
+			TargetURL: link,
+			Depth:     depth,
+		})
+	}
+	if err := st.InsertMappedBatch(ctx, tx, inserts); err != nil {
+		tx.Rollback()
+		return err
+	}
+	if len(tasks) > 0 {
+		if err := st.InsertTasks(ctx, tx, jobID, tasks); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 func shouldRetry(attempts, maxRetries int) bool {

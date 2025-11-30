@@ -85,6 +85,13 @@ type DocumentRow struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+type MappedInsert struct {
+	JobID     string
+	SourceURL string
+	TargetURL string
+	Depth     int
+}
+
 type MappedRow struct {
 	ID        int64     `json:"id"`
 	JobID     string    `json:"job_id"`
@@ -135,18 +142,6 @@ func (s *Store) InsertTasks(ctx context.Context, tx *sql.Tx, jobID string, tasks
 	return nil
 }
 
-type execer struct {
-	db *sql.DB
-	tx *sql.Tx
-}
-
-func (e execer) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
-	if e.tx != nil {
-		return e.tx.PrepareContext(ctx, query)
-	}
-	return e.db.PrepareContext(ctx, query)
-}
-
 // DequeueTask claims a task using SKIP LOCKED and lease timeout. It returns sql.ErrNoRows when none available.
 func (s *Store) DequeueTask(ctx context.Context, leaseTimeout time.Duration) (*Task, error) {
 	threshold := time.Now().Add(-leaseTimeout)
@@ -192,9 +187,16 @@ func (s *Store) DequeueTask(ctx context.Context, leaseTimeout time.Duration) (*T
 // UpdateTaskFinalURL updates the final URL after redirects.
 func (s *Store) UpdateTaskFinalURL(ctx context.Context, taskID int64, finalURL string) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE crawl_tasks
+		UPDATE crawl_tasks AS target
 		SET final_url = $1, updated_at = now()
-		WHERE id = $2
+		WHERE target.id = $2
+		  AND target.final_url <> $1
+		  AND NOT EXISTS (
+			SELECT 1 FROM crawl_tasks
+			WHERE job_id = target.job_id
+			  AND final_url = $1
+			  AND id <> target.id
+		  )
 	`, finalURL, taskID)
 	return err
 }
@@ -322,14 +324,14 @@ func (s *Store) CancelExpiredJobs(ctx context.Context) error {
 // ListDocuments returns documents for a job with pagination.
 func (s *Store) ListDocuments(ctx context.Context, jobID string, limit, offset int, sort, orderBy string) ([]DocumentRow, error) {
 	order := orderDir(sort)
-	column := documentOrderColumn(orderBy)
+	orderClause := makeOrderClause(order, documentOrderColumn(orderBy))
 	query := fmt.Sprintf(`
 		SELECT id, job_id, requested_url, final_url, title, content_md, content_raw, meta, created_at
 		FROM documents
 		WHERE job_id = $1
-		ORDER BY %s %s, id %s
+		ORDER BY %s
 		LIMIT $2 OFFSET $3
-	`, column, order, order)
+	`, orderClause)
 	rows, err := s.db.QueryContext(ctx, query, jobID, limit, offset)
 	if err != nil {
 		return nil, err
@@ -350,7 +352,7 @@ func (s *Store) ListDocuments(ctx context.Context, jobID string, limit, offset i
 // ListDocumentsAfter returns documents with id > afterCursor (or < when sorting desc).
 func (s *Store) ListDocumentsAfter(ctx context.Context, jobID string, limit int, afterCursor int64, sort, orderBy string) ([]DocumentRow, error) {
 	order := orderDir(sort)
-	column := documentOrderColumn(orderBy)
+	orderClause := makeOrderClause(order, documentOrderColumn(orderBy))
 	compare := ">"
 	if order == "DESC" {
 		compare = "<"
@@ -359,9 +361,9 @@ func (s *Store) ListDocumentsAfter(ctx context.Context, jobID string, limit int,
 		SELECT id, job_id, requested_url, final_url, title, content_md, content_raw, meta, created_at
 		FROM documents
 		WHERE job_id = $1 AND id %s $2
-		ORDER BY %s %s, id %s
+		ORDER BY %s
 		LIMIT $3
-	`, compare, column, order, order)
+	`, compare, orderClause)
 	rows, err := s.db.QueryContext(ctx, query, jobID, afterCursor, limit)
 	if err != nil {
 		return nil, err
@@ -382,14 +384,14 @@ func (s *Store) ListDocumentsAfter(ctx context.Context, jobID string, limit int,
 // ListMapped returns mapped URLs for a job with pagination.
 func (s *Store) ListMapped(ctx context.Context, jobID string, limit, offset int, sort, orderBy string) ([]MappedRow, error) {
 	order := orderDir(sort)
-	column := mapOrderColumn(orderBy)
+	orderClause := makeOrderClause(order, mapOrderColumn(orderBy))
 	query := fmt.Sprintf(`
 		SELECT id, job_id, source_url, target_url, depth, created_at
 		FROM mapped_urls
 		WHERE job_id = $1
-		ORDER BY %s %s, id %s
+		ORDER BY %s
 		LIMIT $2 OFFSET $3
-	`, column, order, order)
+	`, orderClause)
 	rows, err := s.db.QueryContext(ctx, query, jobID, limit, offset)
 	if err != nil {
 		return nil, err
@@ -410,7 +412,7 @@ func (s *Store) ListMapped(ctx context.Context, jobID string, limit, offset int,
 // ListMappedAfter returns mapped rows with id > afterCursor.
 func (s *Store) ListMappedAfter(ctx context.Context, jobID string, limit int, afterCursor int64, sort, orderBy string) ([]MappedRow, error) {
 	order := orderDir(sort)
-	column := mapOrderColumn(orderBy)
+	orderClause := makeOrderClause(order, mapOrderColumn(orderBy))
 	compare := ">"
 	if order == "DESC" {
 		compare = "<"
@@ -419,9 +421,9 @@ func (s *Store) ListMappedAfter(ctx context.Context, jobID string, limit int, af
 		SELECT id, job_id, source_url, target_url, depth, created_at
 		FROM mapped_urls
 		WHERE job_id = $1 AND id %s $2
-		ORDER BY %s %s, id %s
+		ORDER BY %s
 		LIMIT $3
-	`, compare, column, order, order)
+	`, compare, orderClause)
 	rows, err := s.db.QueryContext(ctx, query, jobID, afterCursor, limit)
 	if err != nil {
 		return nil, err
@@ -466,6 +468,10 @@ func mapOrderColumn(orderBy string) string {
 	default:
 		return "id"
 	}
+}
+
+func makeOrderClause(order string, column string) string {
+	return fmt.Sprintf("%s %s, id %s", column, order, order)
 }
 
 // GetJob fetches a job by ID.
@@ -528,9 +534,45 @@ func (s *Store) MarkCanonical(ctx context.Context, url string) error {
 
 // InsertMapped inserts discovered links for map jobs.
 func (s *Store) InsertMapped(ctx context.Context, jobID, source, target string, depth int) error {
-	_, err := s.db.ExecContext(ctx, `
+	return s.InsertMappedBatch(ctx, nil, []MappedInsert{{
+		JobID:     jobID,
+		SourceURL: source,
+		TargetURL: target,
+		Depth:     depth,
+	}})
+}
+
+// InsertMappedBatch bulk inserts mapped URLs, using optional transaction.
+func (s *Store) InsertMappedBatch(ctx context.Context, tx *sql.Tx, entries []MappedInsert) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	execer := execer{db: s.db, tx: tx}
+	stmt, err := execer.PrepareContext(ctx, `
 		INSERT INTO mapped_urls (job_id, source_url, target_url, depth)
 		VALUES ($1, $2, $3, $4)
-	`, jobID, source, target, depth)
-	return err
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, e := range entries {
+		if _, err := stmt.ExecContext(ctx, e.JobID, e.SourceURL, e.TargetURL, e.Depth); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type execer struct {
+	db *sql.DB
+	tx *sql.Tx
+}
+
+func (e execer) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	if e.tx != nil {
+		return e.tx.PrepareContext(ctx, query)
+	}
+	return e.db.PrepareContext(ctx, query)
 }

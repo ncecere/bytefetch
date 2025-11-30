@@ -129,7 +129,7 @@ These apply when a request does not override them.
 - `strip_query` *(default `true`)*: Remove query strings when canonicalizing.
 - `block_extensions` *(default `[".pdf", ...]`)*: Links with these extensions are skipped.
 - `allowed_schemes` *(default `["http","https"]`)*: Schemes to follow.
-- `dedupe_cache` *(default `false`)*: Global canonical URL cache to avoid reprocessing.
+- `dedupe_cache` *(default `false`)*: Global canonical URL cache. When enabled, seed URLs return `409` if already processed and crawl/map workers skip canonical duplicates across jobs.
 - `include_sitemaps` *(default `false`)*: Worker seeds sitemap URLs at depth 0 when enabled.
 - `sitemap_url_limit` *(default `1000`)*: Max sitemap URLs per job.
 - `sitemap_max_nested` *(default `3`)*: Depth when traversing nested sitemap indexes.
@@ -138,8 +138,8 @@ These apply when a request does not override them.
 - `enabled` *(default `true`)*: Toggles Rod/Chromium rendering; when false, JS rendering is unavailable.
 - `headless` *(default `true`)*: Whether to run Chromium headless.
 - `pool_size` *(default `4`)*: Number of pre-created pages (render contexts).
-- `per_host_limit` *(default `2`)*: Concurrent renderings per host.
-- `nav_timeout` *(default `15s`)*: Navigation timeout for Rod.
+- `per_host_limit` *(default `2`)*: Concurrent renderings per host; metrics expose in-flight counts per host.
+- `nav_timeout` *(default `15s`)*: Navigation timeout for Rod; render failures increment Prometheus counters by host/stage.
 - `wait_idle_timeout` *(default `3s`)*: Additional idle wait after load to allow content rendering.
 - `executable_path` *(default empty)*: Custom Chromium/Chrome binary path.
 - `user_agent` *(default empty)*: UA override for Rod sessions.
@@ -377,9 +377,9 @@ Response:
 
 ## Observability
 
-- `/metrics` exposes Prometheus metrics (HTTP, worker, fetch/render timings, browser pool health, cleanup sweeps).
+- `/metrics` exposes Prometheus metrics (HTTP, worker, fetch/render timings, browser render failures, per-host pool usage, cleanup sweeps).
 - `/healthz` is a simple liveness endpoint, `/readyz` checks DB + browser readiness.
 
-## Development Checklist
+## Development Notes
 
-Refer to `Tasks.md` for progress tracking. All major v1 items (sitemaps, pagination polish, dedupe, browser monitoring, tests) are implemented; extend as needed for auth/rate limiting, richer analytics, or deployment automation.
+- Refer to `Tasks.md` for ongoing refactor items. When adding new config fields, keep `config.example.yaml`, README tables, and `internal/config/config.go` defaults in sync. Consider generating docs from struct tags to reduce drift (TODO).

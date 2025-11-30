@@ -1,3 +1,15 @@
+x-worker-service: &worker_common
+  build: .
+  command: ["--mode=worker", "--config=/config/config.yaml"]
+  environment:
+    BULLNOSE_DATABASE_URL: postgres://bullnose:bullnose@db:5432/bullnose?sslmode=disable
+  volumes:
+    - ./config.dev.yaml:/config/config.yaml:ro
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
 services:
   db:
     image: postgres:16
@@ -15,6 +27,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  api:
+    build: .
+    command: ["--mode=api", "--config=/config/config.yaml"]
+    environment:
+      BULLNOSE_DATABASE_URL: postgres://bullnose:bullnose@db:5432/bullnose?sslmode=disable
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.dev.yaml:/config/config.yaml:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    <<: *worker_common
+
+  worker-2:
+    <<: *worker_common
+
+  worker-3:
+    <<: *worker_common
 
 volumes:
   pgdata: {}

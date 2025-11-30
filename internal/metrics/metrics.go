@@ -63,6 +63,13 @@ var (
 		},
 		[]string{"host"},
 	)
+	BrowserRenderFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "bullnose_browser_render_failures_total",
+			Help: "Count of render failures by host and stage",
+		},
+		[]string{"host", "stage"},
+	)
 	BrowserRestarts = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "bullnose_browser_restarts_total",
@@ -130,6 +137,7 @@ func MustRegister() {
 		FetchHTTPStatus,
 		ExtractDuration,
 		RenderDuration,
+		BrowserRenderFailures,
 		BrowserRestarts,
 		BrowserPoolAvailable,
 		BrowserPoolInUse,

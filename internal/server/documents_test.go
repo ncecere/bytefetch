@@ -1,0 +1,46 @@
+package server
+
+import (
+	"database/sql"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/nickcecere/bullnose/internal/store"
+)
+
+func TestDocumentFromRow(t *testing.T) {
+	job := &store.Job{
+		ID:        "job-1",
+		ExpiresAt: sqlNullTime(t),
+	}
+	meta := map[string]any{"title": "Example"}
+	raw, _ := json.Marshal(meta)
+	row := store.DocumentRow{
+		ID:           1,
+		JobID:        "job-1",
+		RequestedURL: "https://example.com",
+		FinalURL:     "https://example.com",
+		ContentMD:    "body",
+		Meta:         raw,
+	}
+	resp := documentFromRow(row, job, "text")
+	if resp.Content != "body" {
+		t.Fatalf("expected content body, got %s", resp.Content)
+	}
+	metaResp, ok := resp.Meta.(map[string]any)
+	if !ok {
+		t.Fatalf("meta not map: %#v", resp.Meta)
+	}
+	if metaResp["requested_url"] != "https://example.com" {
+		t.Fatalf("requested_url missing: %#v", metaResp)
+	}
+	if metaResp["expires_at"] == "" {
+		t.Fatalf("expires_at missing: %#v", metaResp)
+	}
+}
+
+func sqlNullTime(t *testing.T) sql.NullTime {
+	t.Helper()
+	return sql.NullTime{Valid: true, Time: time.Now()}
+}

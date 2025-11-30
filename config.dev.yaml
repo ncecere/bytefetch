@@ -15,9 +15,9 @@ http:
   user_agent: BullnoseCrawler/0.1
 
 worker:
-  pool_size: 4
-  per_host_limit: 2
-  per_host_rps: 2
+  pool_size: 8
+  per_host_limit: 4
+  per_host_rps: 4
   max_retries: 3
   backoff_base: 500ms
   backoff_max: 10s

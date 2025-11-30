@@ -48,7 +48,7 @@ func NewFetcher(httpCfg config.HTTPConfig, renderer *Renderer, browserCfg config
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string, useJS bool) (*Result, error) {
 	if useJS && f.renderer != nil && f.browserCfg.Enabled {
 		start := time.Now()
-		res, err := f.renderer.Render(ctx, rawURL, f.browserCfg)
+		res, err := f.renderer.Render(ctx, rawURL)
 		if err == nil {
 			metrics.RenderDuration.WithLabelValues(hostFromURL(res.FinalURL)).Observe(time.Since(start).Seconds())
 		}
@@ -97,7 +97,7 @@ func (f *Fetcher) Ready(ctx context.Context) error {
 	if f.renderer == nil || !f.browserCfg.Enabled {
 		return nil
 	}
-	_, err := f.renderer.Render(ctx, "about:blank", f.browserCfg)
+	_, err := f.renderer.Render(ctx, "about:blank")
 	return err
 }
 
