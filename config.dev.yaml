@@ -1,0 +1,73 @@
+server:
+  addr: ":8080"
+
+database:
+  url: "postgres://bullnose:bullnose@localhost:5432/bullnose?sslmode=disable"
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_idle_time: 5m
+  conn_max_lifetime: 30m
+
+http:
+  timeout: 10s
+  max_redirects: 5
+  max_body_bytes: 5MB
+  user_agent: BullnoseCrawler/0.1
+
+worker:
+  pool_size: 4
+  per_host_limit: 2
+  per_host_rps: 2
+  max_retries: 3
+  backoff_base: 500ms
+  backoff_max: 10s
+  lease_timeout: 60s
+  heartbeat_interval: 10s
+
+job_defaults:
+  max_tasks: 5000
+  max_depth: 2
+  max_duration: 15m
+  max_bytes: 100MB
+  ttl: 24h
+  deadline: 15m
+
+crawl:
+  respect_robots: true
+  robots_fail_open: true
+  respect_nofollow: false
+  crawl_delay_ms: 0
+  strip_query: true
+  block_extensions: [".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".zip", ".tar", ".gz", ".exe", ".dmg", ".iso"]
+  allowed_schemes: ["http", "https"]
+  dedupe_cache: false
+  include_sitemaps: true
+  sitemap_url_limit: 200
+  sitemap_max_nested: 2
+
+browser:
+  enabled: true
+  headless: true
+  pool_size: 2
+  per_host_limit: 2
+  nav_timeout: 15s
+  wait_idle_timeout: 3s
+  executable_path: ""
+  user_agent: ""
+  viewport:
+    width: 1280
+    height: 720
+  max_page_lifetime: 60s
+
+auth:
+  enabled: false
+
+ratelimit:
+  enabled: false
+
+cleanup:
+  interval: 1h
+  enabled: true
+  run_in: ["api", "worker", "all"]
+  api_interval: 30m
+  worker_interval: 30m
