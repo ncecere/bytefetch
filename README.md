@@ -17,7 +17,7 @@ ByteFetch is a Go-based scraping/crawling engine. A single binary (`crawler`) ca
    go test ./...
    ```
 
-PostgreSQL is required; `docker-compose up -d db` (if provided) bootstraps a local instance.
+PostgreSQL is required; use the Docker assets under `deployments/docker/` (e.g., `docker compose -f deployments/docker/docker-compose.yml up -d`) which mount `deployments/docker/config.dev.yaml` into the container for a ready-to-run setup.
 
 ## Configuration
 

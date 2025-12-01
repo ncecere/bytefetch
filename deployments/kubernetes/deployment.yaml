@@ -1,0 +1,163 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bytefetch-api
+  labels:
+    app: bytefetch
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bytefetch
+      component: api
+  template:
+    metadata:
+      labels:
+        app: bytefetch
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/ncecere/bytefetch:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --mode=api
+            - --config=/config/config.yaml
+          env:
+            - name: BYTEFETCH_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bytefetch-secrets
+                  key: database-url
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: bytefetch-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bytefetch-api
+  labels:
+    app: bytefetch
+    component: api
+spec:
+  selector:
+    app: bytefetch
+    component: api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: batch/v1
+kind: Deployment
+metadata:
+  name: bytefetch-worker
+  labels:
+    app: bytefetch
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bytefetch
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: bytefetch
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/ncecere/bytefetch:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --mode=worker
+            - --config=/config/config.yaml
+          env:
+            - name: BYTEFETCH_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bytefetch-secrets
+                  key: database-url
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: bytefetch-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bytefetch-config
+data:
+  config.yaml: |
+    server:
+      addr: ":8080"
+    database:
+      url: "postgres://bytefetch:bytefetch@postgres:5432/bytefetch?sslmode=disable"
+    http:
+      timeout: 10s
+      max_redirects: 5
+      max_body_bytes: 5MB
+      user_agent: ByteFetchCrawler/0.1
+    worker:
+      pool_size: 4
+      per_host_limit: 2
+      per_host_rps: 2
+      max_retries: 3
+      backoff_base: 500ms
+      backoff_max: 10s
+      lease_timeout: 60s
+      heartbeat_interval: 10s
+    job_defaults:
+      max_tasks: 5000
+      max_depth: 2
+      max_duration: 15m
+      max_bytes: 100MB
+      ttl: 24h
+      deadline: 15m
+    crawl:
+      respect_robots: true
+      robots_fail_open: true
+      respect_nofollow: false
+      crawl_delay_ms: 0
+      strip_query: true
+      block_extensions: [".pdf", ".jpg", ".png", ".zip"]
+      allowed_schemes: ["http", "https"]
+      dedupe_cache: true
+      include_sitemaps: true
+      sitemap_url_limit: 500
+      sitemap_max_nested: 2
+    browser:
+      enabled: true
+      headless: true
+      pool_size: 2
+      per_host_limit: 2
+      nav_timeout: 15s
+      wait_idle_timeout: 3s
+      max_page_lifetime: 60s
+    cleanup:
+      interval: 1h
+      enabled: true
+      run_in: ["api", "worker", "all"]
+      api_interval: 30m
+      worker_interval: 30m
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bytefetch-secrets
+type: Opaque
+stringData:
+  database-url: postgres://bytefetch:bytefetch@postgres:5432/bytefetch?sslmode=disable
