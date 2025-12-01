@@ -12,7 +12,7 @@ http:
   timeout: 10s
   max_redirects: 5
   max_body_bytes: 5MB
-  user_agent: BullnoseCrawler/0.1
+  user_agent: ByteFetchCrawler/0.1
 
 worker:
   pool_size: 8

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/ncecere/bullnose/internal/config"
+	"github.com/ncecere/bytefetch/internal/config"
 )
 
 // Open creates a sql.DB configured with the provided settings.

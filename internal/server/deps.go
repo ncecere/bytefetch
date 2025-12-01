@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/ncecere/bullnose/internal/config"
-	"github.com/ncecere/bullnose/internal/fetch"
-	"github.com/ncecere/bullnose/internal/store"
+	"github.com/ncecere/bytefetch/internal/config"
+	"github.com/ncecere/bytefetch/internal/fetch"
+	"github.com/ncecere/bytefetch/internal/store"
 )
 
 type HandlerDeps struct {

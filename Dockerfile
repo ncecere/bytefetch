@@ -10,5 +10,5 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates chromium && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /bin/crawler /usr/local/bin/crawler
-ENV BULLNOSE_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV BYTEFETCH_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENTRYPOINT ["/usr/local/bin/crawler"]

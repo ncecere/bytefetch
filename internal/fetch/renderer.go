@@ -9,8 +9,8 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
-	"github.com/ncecere/bullnose/internal/config"
-	"github.com/ncecere/bullnose/internal/metrics"
+	"github.com/ncecere/bytefetch/internal/config"
+	"github.com/ncecere/bytefetch/internal/metrics"
 	"net/url"
 )
 

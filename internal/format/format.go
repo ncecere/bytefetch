@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
-	"github.com/ncecere/bullnose/internal/extract"
+	"github.com/ncecere/bytefetch/internal/extract"
 	stripmd "github.com/writeas/go-strip-markdown/v2"
 )
 

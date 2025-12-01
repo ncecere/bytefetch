@@ -2,7 +2,7 @@ x-worker-service: &worker_common
   build: .
   command: ["--mode=worker", "--config=/config/config.yaml"]
   environment:
-    BULLNOSE_DATABASE_URL: postgres://bullnose:bullnose@db:5432/bullnose?sslmode=disable
+    BYTEFETCH_DATABASE_URL: postgres://bytefetch:bytefetch@db:5432/bytefetch?sslmode=disable
   volumes:
     - ./config.dev.yaml:/config/config.yaml:ro
   depends_on:
@@ -15,9 +15,9 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: bullnose
-      POSTGRES_PASSWORD: bullnose
-      POSTGRES_DB: bullnose
+      POSTGRES_USER: bytefetch
+      POSTGRES_PASSWORD: bytefetch
+      POSTGRES_DB: bytefetch
     ports:
       - "5432:5432"
     volumes:
@@ -32,7 +32,7 @@ services:
     build: .
     command: ["--mode=api", "--config=/config/config.yaml"]
     environment:
-      BULLNOSE_DATABASE_URL: postgres://bullnose:bullnose@db:5432/bullnose?sslmode=disable
+      BYTEFETCH_DATABASE_URL: postgres://bytefetch:bytefetch@db:5432/bytefetch?sslmode=disable
     ports:
       - "8080:8080"
     volumes:

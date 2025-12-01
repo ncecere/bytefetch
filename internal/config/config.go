@@ -152,7 +152,7 @@ func (b ByteSize) Int64() int64 {
 func Load(path string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")
-	v.SetEnvPrefix("BULLNOSE")
+	v.SetEnvPrefix("BYTEFETCH")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
@@ -203,7 +203,7 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("http.timeout", "10s")
 	v.SetDefault("http.max_redirects", 5)
 	v.SetDefault("http.max_body_bytes", "5MB")
-	v.SetDefault("http.user_agent", "BullnoseCrawler/0.1")
+	v.SetDefault("http.user_agent", "ByteFetchCrawler/0.1")
 
 	v.SetDefault("worker.pool_size", 8)
 	v.SetDefault("worker.per_host_limit", 2)

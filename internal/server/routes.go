@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/ncecere/bullnose/internal/extract"
-	"github.com/ncecere/bullnose/internal/format"
-	"github.com/ncecere/bullnose/internal/store"
-	"github.com/ncecere/bullnose/internal/types"
+	"github.com/ncecere/bytefetch/internal/extract"
+	"github.com/ncecere/bytefetch/internal/format"
+	"github.com/ncecere/bytefetch/internal/store"
+	"github.com/ncecere/bytefetch/internal/types"
 )
 
 func registerRoutes(app *fiber.App, deps HandlerDeps) {

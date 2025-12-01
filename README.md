@@ -1,6 +1,6 @@
-# Bullnose
+# ByteFetch
 
-Bullnose is a Go-based scraping/crawling engine inspired by Firecrawl. A single binary (`crawler`) can run API, worker, or combined “all” mode, exposing synchronous scrape plus asynchronous batch/crawl/map jobs with PostgreSQL-backed queues, JS rendering via Rod, and Prometheus metrics.
+ByteFetch is a Go-based scraping/crawling engine inspired by Firecrawl. A single binary (`crawler`) can run API, worker, or combined “all” mode, exposing synchronous scrape plus asynchronous batch/crawl/map jobs with PostgreSQL-backed queues, JS rendering via Rod, and Prometheus metrics.
 
 ## Getting Started
 
@@ -28,13 +28,13 @@ server:
   addr: ":8080"
 
 database:
-  url: "postgres://bullnose:bullnose@localhost:5432/bullnose?sslmode=disable"
+  url: "postgres://bytefetch:bytefetch@localhost:5432/bytefetch?sslmode=disable"
 
 http:
   timeout: 10s
   max_redirects: 5
   max_body_bytes: 5MB
-  user_agent: BullnoseCrawler/0.1
+  user_agent: ByteFetchCrawler/0.1
 
 worker:
   pool_size: 4
@@ -84,7 +84,7 @@ cleanup:
   worker_interval: 30m
 ```
 
-Launch the binary with `--config=/path/to/config.yaml`. Environment variables prefixed with `BULLNOSE_` override values (e.g., `BULLNOSE_DATABASE_URL`).
+Launch the binary with `--config=/path/to/config.yaml`. Environment variables prefixed with `BYTEFETCH_` override values (e.g., `BYTEFETCH_DATABASE_URL`).
 
 ### Server
 - `addr` *(default `:8080`)*: Address the Fiber API server listens on, e.g., `0.0.0.0:8080`.
@@ -100,7 +100,7 @@ Launch the binary with `--config=/path/to/config.yaml`. Environment variables pr
 - `timeout` *(default `10s`)*: HTTP client timeout for network fetches.
 - `max_redirects` *(default `5`)*: Redirects followed before aborting.
 - `max_body_bytes` *(default `5MB`)*: Response size limit.
-- `user_agent` *(default `BullnoseCrawler/0.1`)*: UA header for fetcher and robots.
+- `user_agent` *(default `ByteFetchCrawler/0.1`)*: UA header for fetcher and robots.
 
 ### Worker
 - `pool_size` *(default `8`)*: Number of goroutines processing tasks.

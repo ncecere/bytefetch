@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/ncecere/bullnose/internal/format"
-	"github.com/ncecere/bullnose/internal/types"
+	"github.com/ncecere/bytefetch/internal/format"
+	"github.com/ncecere/bytefetch/internal/types"
 )
 
 func validateScrapeRequest(req *types.ScrapeRequest) error {

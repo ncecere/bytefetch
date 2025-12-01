@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ncecere/bullnose/internal/store"
+	"github.com/ncecere/bytefetch/internal/store"
 )
 
 func TestDocumentFromRow(t *testing.T) {

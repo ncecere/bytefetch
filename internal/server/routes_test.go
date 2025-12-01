@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/ncecere/bullnose/internal/config"
-	"github.com/ncecere/bullnose/internal/fetch"
-	"github.com/ncecere/bullnose/internal/store"
+	"github.com/ncecere/bytefetch/internal/config"
+	"github.com/ncecere/bytefetch/internal/fetch"
+	"github.com/ncecere/bytefetch/internal/store"
 )
 
 func TestScrapeRouteReturnsContent(t *testing.T) {

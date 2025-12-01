@@ -2,7 +2,7 @@ server:
   addr: ":8080"
 
 database:
-  url: "postgres://bullnose:bullnose@localhost:5432/bullnose?sslmode=disable"
+  url: "postgres://bytefetch:bytefetch@localhost:5432/bytefetch?sslmode=disable"
   max_open_conns: 10
   max_idle_conns: 5
   conn_max_idle_time: 5m
@@ -12,7 +12,7 @@ http:
   timeout: 10s
   max_redirects: 5
   max_body_bytes: 5MB
-  user_agent: BullnoseCrawler/0.1
+  user_agent: ByteFetchCrawler/0.1
 
 worker:
   pool_size: 8

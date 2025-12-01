@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ncecere/bullnose/internal/store"
-	"github.com/ncecere/bullnose/internal/urlutil"
+	"github.com/ncecere/bytefetch/internal/store"
+	"github.com/ncecere/bytefetch/internal/urlutil"
 )
 
 type taskSeed struct {

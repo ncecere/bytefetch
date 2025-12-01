@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ncecere/bullnose/internal/config"
+	"github.com/ncecere/bytefetch/internal/config"
 )
 
 func TestFetcherFetchHTTP(t *testing.T) {
@@ -23,7 +23,7 @@ func TestFetcherFetchHTTP(t *testing.T) {
 		Timeout:      2 * time.Second,
 		MaxRedirects: 3,
 		MaxBodyBytes: config.ByteSize(1024),
-		UserAgent:    "BullnoseTest/1.0",
+		UserAgent:    "ByteFetchTest/1.0",
 	}
 	f := NewFetcher(httpCfg, nil, config.BrowserConfig{Enabled: false})
 

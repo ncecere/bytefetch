@@ -5,14 +5,14 @@ import "github.com/prometheus/client_golang/prometheus"
 var (
 	RequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "bullnose_http_requests_total",
+			Name: "bytefetch_http_requests_total",
 			Help: "Total HTTP requests",
 		},
 		[]string{"path", "method", "status"},
 	)
 	RequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "bullnose_http_request_duration_seconds",
+			Name:    "bytefetch_http_request_duration_seconds",
 			Help:    "HTTP request duration",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -20,21 +20,21 @@ var (
 	)
 	WorkerTasksTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "bullnose_worker_tasks_total",
+			Name: "bytefetch_worker_tasks_total",
 			Help: "Worker tasks processed",
 		},
 		[]string{"status"},
 	)
 	WorkerTaskDuration = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
-			Name:    "bullnose_worker_task_duration_seconds",
+			Name:    "bytefetch_worker_task_duration_seconds",
 			Help:    "Duration of worker task processing",
 			Buckets: prometheus.DefBuckets,
 		},
 	)
 	FetchDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "bullnose_fetch_duration_seconds",
+			Name:    "bytefetch_fetch_duration_seconds",
 			Help:    "Duration of HTTP/JS fetch",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -42,14 +42,14 @@ var (
 	)
 	FetchHTTPStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "bullnose_fetch_http_status_total",
+			Name: "bytefetch_fetch_http_status_total",
 			Help: "HTTP fetch counts by status code",
 		},
 		[]string{"host", "status"},
 	)
 	ExtractDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "bullnose_extract_duration_seconds",
+			Name:    "bytefetch_extract_duration_seconds",
 			Help:    "Duration of extraction step",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -57,7 +57,7 @@ var (
 	)
 	RenderDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "bullnose_render_duration_seconds",
+			Name:    "bytefetch_render_duration_seconds",
 			Help:    "Duration of JS render via browser",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -65,63 +65,63 @@ var (
 	)
 	BrowserRenderFailures = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "bullnose_browser_render_failures_total",
+			Name: "bytefetch_browser_render_failures_total",
 			Help: "Count of render failures by host and stage",
 		},
 		[]string{"host", "stage"},
 	)
 	BrowserRestarts = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "bullnose_browser_restarts_total",
+			Name: "bytefetch_browser_restarts_total",
 			Help: "Total browser restart attempts",
 		},
 	)
 	BrowserPoolAvailable = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "bullnose_browser_pool_available",
+			Name: "bytefetch_browser_pool_available",
 			Help: "Current available pages in the browser pool",
 		},
 	)
 	BrowserPoolInUse = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "bullnose_browser_pool_in_use",
+			Name: "bytefetch_browser_pool_in_use",
 			Help: "Pages currently leased from the browser pool",
 		},
 	)
 	BrowserHostInFlight = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "bullnose_browser_host_inflight",
+			Name: "bytefetch_browser_host_inflight",
 			Help: "Current JS render usage per host",
 		},
 		[]string{"host"},
 	)
 	BrowserHealth = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "bullnose_browser_health",
+			Name: "bytefetch_browser_health",
 			Help: "Browser health probe (1=ok,0=fail)",
 		},
 	)
 	BrowserHealthChecksTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "bullnose_browser_health_checks_total",
+			Name: "bytefetch_browser_health_checks_total",
 			Help: "Number of browser pool health checks executed",
 		},
 	)
 	BrowserHealthFailuresTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "bullnose_browser_health_failures_total",
+			Name: "bytefetch_browser_health_failures_total",
 			Help: "Number of browser health check failures",
 		},
 	)
 	CleanupRunsTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "bullnose_cleanup_runs_total",
+			Name: "bytefetch_cleanup_runs_total",
 			Help: "Number of cleanup sweeps executed",
 		},
 	)
 	CleanupErrorsTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "bullnose_cleanup_errors_total",
+			Name: "bytefetch_cleanup_errors_total",
 			Help: "Number of cleanup sweep errors",
 		},
 	)

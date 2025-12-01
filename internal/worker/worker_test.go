@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ncecere/bullnose/internal/config"
+	"github.com/ncecere/bytefetch/internal/config"
 )
 
 func TestFilterLinksSameDomainAndBlocked(t *testing.T) {
