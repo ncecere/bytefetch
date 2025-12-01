@@ -392,6 +392,18 @@ Response:
 - `/metrics` exposes Prometheus metrics (HTTP, worker, fetch/render timings, browser render failures, per-host pool usage, cleanup sweeps).
 - `/healthz` is a simple liveness endpoint, `/readyz` checks DB + browser readiness.
 
+## Continuous Integration & Releases
+
+Releases are fully automated through `.github/workflows/ci.yml` and run **only** when you push a tag that matches `v*` (for example `v0.4.0`):
+
+- **Go build artifact**: the pipeline runs tests, builds `cmd/crawler`, and uploads `bytefetch-linux-amd64.tar.gz`. The release job attaches that tarball to the GitHub Release so end-users can download the binary directly.
+- **GitHub Release**: tags automatically create a GitHub Release (with notes auto-generated) and attach the compiled tarball.
+- **Container image**: after the release artifact is attached, the workflow builds a multi-arch Docker image (`linux/amd64` + `linux/arm64`) and pushes it to `ghcr.io/<owner>/bytefetch` tagged with `latest` and the version tag. Example pull:
+  ```bash
+  docker pull ghcr.io/<your-org-or-user>/bytefetch:latest
+  ```
+- No extra secrets are required—the default `GITHUB_TOKEN` (with `packages: write`) is enough for GHCR. To publish to another registry, add credentials via repo secrets and expand the workflow accordingly.
+
 ## Development Notes
 
 - Refer to `Tasks.md` for ongoing refactor items. When adding new config fields, keep `config.example.yaml`, README tables, and `internal/config/config.go` defaults in sync. Consider generating docs from struct tags to reduce drift (TODO).
