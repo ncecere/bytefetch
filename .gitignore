@@ -1,0 +1,17 @@
+# Executables and artifacts
+/dist/
+/bytefetch-*
+*.tar.gz
+
+# Go build cache / test binaries
+/bin/
+/build/
+*.test
+
+# IDE / Editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
