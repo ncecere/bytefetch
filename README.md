@@ -387,6 +387,52 @@ Response:
 }
 ```
 
+### Documents listing (`GET /v1/jobs/{id}/documents`)
+
+Every batch/crawl job stores rendered pages that you can page through using `/documents`. Key query parameters:
+
+- `limit` *(default 50, max 500)*: number of rows per page.
+- `after`: numeric cursor (document ID) returned as `next_cursor` from the previous page; supply it to get the next batch.
+- `sort` *(default `asc`)* and `sort_by` *(default `id`)*: control ordering (`id`, `created_at`, `title`).
+- `format` is **not** a filter here; each item already includes an `outputs` array with every format requested when the job was created.
+
+Each item returns:
+```json
+{
+  "id": 123,
+  "job_id": "...",
+  "outputs": [
+    {"format":"markdown","content":"..."},
+    {"format":"text","content":"..."}
+  ],
+  "meta": {
+    "requested_url": "...",
+    "final_url": "...",
+    "crawl_url": "...",
+    "created_at": "...",
+    "expires_at": "...",
+    "title": "...",
+    "language": "en",
+    ...
+  }
+}
+```
+Use `next_cursor` from the JSON wrapper to fetch subsequent pages until it returns `0` (end of results).
+
+### Exports (`GET /v1/jobs/{id}/export`)
+
+`/export` streams NDJSON for a job so you can script bulk downloads. Important query params:
+
+- `type`: `documents` (default) or `map`.
+- `limit`, `after`, `sort`, `sort_by`: same semantics as `/documents`.
+- `all` *(bool, default `false`)*: when `true`, the endpoint keeps reading successive pages until exhaustion; otherwise it returns only one page and sets `X-Next-Cursor`.
+
+Each line is standalone JSON. For `documents`, the payload matches the `/documents` item shown above. The final line is always the cursor metadata:
+```json
+{"type":"cursor","next_cursor":123,"sort":"asc","sort_by":"id"}
+```
+Set the `after` query param to that cursor to continue exporting or stop when it reaches `0`. Remember to set `Accept: application/x-ndjson` (or pipe through tools like `jq -c`) when automating exports.
+
 ## Observability
 
 - `/metrics` exposes Prometheus metrics (HTTP, worker, fetch/render timings, browser render failures, per-host pool usage, cleanup sweeps).
