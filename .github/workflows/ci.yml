@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -15,8 +15,22 @@ env:
 
 jobs:
   go-build:
-    name: Go Build & Test
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,17 +45,16 @@ jobs:
         run: go test ./...
 
       - name: Build binary
-        run: go build -o dist/bytefetch ./cmd/crawler
-
-      - name: Archive binary
         run: |
-          tar -czf bytefetch-linux-amd64.tar.gz -C dist bytefetch
+          OUTPUT="bytefetch-${GOOS}-${GOARCH}"
+          GOOS=${GOOS} GOARCH=${GOARCH} go build -o "dist/${OUTPUT}" ./cmd/crawler
+          tar -czf "${OUTPUT}.tar.gz" -C dist "${OUTPUT}"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bytefetch-linux-amd64
-          path: bytefetch-linux-amd64.tar.gz
+          name: bytefetch-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bytefetch-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
 
   release:
     name: Create Release & Publish Image
@@ -51,16 +64,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: bytefetch-linux-amd64
+          pattern: bytefetch-*
+          merge-multiple: true
           path: artifacts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/bytefetch-linux-amd64.tar.gz
+          files: artifacts/*.tar.gz
           generate_release_notes: true
           tag_name: ${{ github.ref_name }}
 
@@ -79,7 +93,7 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}

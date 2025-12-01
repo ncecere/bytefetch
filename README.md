@@ -396,9 +396,9 @@ Response:
 
 Releases are fully automated through `.github/workflows/ci.yml` and run **only** when you push a tag that matches `v*` (for example `v0.4.0`):
 
-- **Go build artifact**: the pipeline runs tests, builds `cmd/crawler`, and uploads `bytefetch-linux-amd64.tar.gz`. The release job attaches that tarball to the GitHub Release so end-users can download the binary directly.
+- **Go build artifacts**: the pipeline runs tests and cross-compiles `cmd/crawler` for Linux (`amd64`, `arm64`) and macOS (`amd64`, `arm64`). Each build is uploaded as `bytefetch-<os>-<arch>.tar.gz` and attached to the GitHub Release, so users can download whichever binary they need.
 - **GitHub Release**: tags automatically create a GitHub Release (with notes auto-generated) and attach the compiled tarball.
-- **Container image**: after the release artifact is attached, the workflow builds a multi-arch Docker image (`linux/amd64` + `linux/arm64`) and pushes it to `ghcr.io/<owner>/bytefetch` tagged with `latest` and the version tag. Example pull:
+- **Container image**: after the release artifacts are attached, the workflow builds a multi-arch Docker image (`linux/amd64`, `linux/arm64`, `linux/arm/v7`) and pushes it to `ghcr.io/<owner>/bytefetch` tagged with `latest` and the version tag. Example pull:
   ```bash
   docker pull ghcr.io/<your-org-or-user>/bytefetch:latest
   ```
