@@ -1,6 +1,4 @@
-![ByteFetch Logo](assets/bytefetch_logo.png)
-
-# ByteFetch
+# <img src="assets/bytefetch_logo.png" alt="ByteFetch Logo" width="46" height="48"> ByteFetch
 
 ByteFetch is a Go-based scraping/crawling engine inspired by Firecrawl. A single binary (`crawler`) can run API, worker, or combined “all” mode, exposing synchronous scrape plus asynchronous batch/crawl/map jobs with PostgreSQL-backed queues, JS rendering via Rod, and Prometheus metrics.
 
